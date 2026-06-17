@@ -1,3 +1,7 @@
+![C++ Standard](https://img.shields.io/badge/c%2B%2B-17-00599C?style=for-the-badge&logo=c%2B%2B)
+![Build](https://img.shields.io/badge/build-cmake-064F8C?style=for-the-badge&logo=cmake)
+![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
+
 # ⚙️ High-Performance Asynchronous Thread Pool Engine
 
 A modern, enterprise-grade C++17 Thread Pool architecture designed to optimize CPU core throughput. This system implements a thread-safe task queue, automatic hardware core matching, and generic task assignment utilizing advanced type erasure and template-meta programming.
