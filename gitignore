@@ -1,0 +1,14 @@
+# Carpeta de compilación de CMake (nunca se debe subir)
+build/
+
+# Archivos temporales de configuración de CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeSettings.json
+Makefile
+cmake_install.cmake
+
+# Ejecutables compilados
+ThreadPoolEngine
+*.exe
+*.out
