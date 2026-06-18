@@ -1,0 +1,38 @@
+# Directorios de compilación
+build/
+bin/
+lib/
+obj/
+
+# Archivos de CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeSettings.json
+Makefile
+cmake_install.cmake
+*.cmake
+
+# Ejecutables y bibliotecas
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+*.out
+
+# Archivos de objeto
+*.o
+*.obj
+
+# IDEs
+.vs/
+.vscode/
+.idea/
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
+
+# Archivos de log y temporales
+*.log
+*.tmp

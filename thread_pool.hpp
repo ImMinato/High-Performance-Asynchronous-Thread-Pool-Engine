@@ -10,90 +10,91 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <utility>
+#include <tuple>
 
+/**
+ * @brief Un pool de hilos de alto rendimiento que implementa una cola de tareas.
+ */
 class ThreadPool {
 public:
     explicit ThreadPool(size_t threads);
-    
-    // Template para aceptar cualquier función y sus argumentos de forma asíncrona
+
     template<class F, class... Args>
-    auto enqueue(F&& f, Args&&... args) 
-        -> std::future<typename std::invoke_result<F, Args...>::type>;
-        
-    ~ThreadPool();
+    [[nodiscard]] auto enqueue(F&& f, Args&&... args)
+        -> std::future<std::invoke_result_t<F, Args...>>;
+
+    ~ThreadPool() noexcept;
+
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool& operator=(const ThreadPool&) = delete;
+    ThreadPool(ThreadPool&&) = delete;
+    ThreadPool& operator=(ThreadPool&&) = delete;
 
 private:
-    // Lista de hilos trabajadores activos
     std::vector<std::thread> workers;
-    
-    // Cola de tareas estructurada como funciones genéricas envueltas
     std::queue<std::function<void()>> tasks;
-    
-    // Primitivas de sincronización para evitar condiciones de carrera (Race Conditions)
     std::mutex queue_mutex;
     std::condition_variable cv;
     bool stop;
 };
 
-// Implementación del Constructor
 inline ThreadPool::ThreadPool(size_t threads) : stop(false) {
-    for(size_t i = 0; i < threads; ++i) {
+    for (size_t i = 0; i < threads; ++i) {
         workers.emplace_back([this] {
-            while(true) {
+            while (true) {
                 std::function<void()> task;
                 {
-                    // Bloqueo crítico mediante lock de exclusión mutua
-                    std::unique_lock<std::mutex> lock(this->queue_mutex);
-                    this->cv.wait(lock, [this] { 
-                        return this->stop || !this->tasks.empty(); 
+                    std::unique_lock<std::mutex> lock(queue_mutex);
+                    cv.wait(lock, [this] {
+                        return stop || !tasks.empty();
                     });
-                    
-                    if(this->stop && this->tasks.empty()) return;
-                    
-                    task = std::move(this->tasks.front());
-                    this->tasks.pop();
+                    if (stop && tasks.empty())
+                        return;
+                    task = std::move(tasks.front());
+                    tasks.pop();
                 }
-                // Ejecución de la tarea fuera del lock para maximizar concurrencia
                 task();
             }
         });
     }
 }
 
-// Implementación del método Enqueue (Inyección de tareas concurrentes)
 template<class F, class... Args>
-auto ThreadPool::enqueue(F&& f, Args&&... args) 
-    -> std::future<typename std::invoke_result<F, Args...>::type> {
-    
-    using return_type = typename std::invoke_result<F, Args...>::type;
+[[nodiscard]] auto ThreadPool::enqueue(F&& f, Args&&... args)
+    -> std::future<std::invoke_result_t<F, Args...>> {
+    using return_type = std::invoke_result_t<F, Args...>;
 
-    // Encapsulación de la tarea en un puntero inteligente empaquetado (std::packaged_task)
+    // Empaquetar argumentos en una tupla para evitar pack expansion en C++17
+    auto args_tuple = std::make_tuple(std::forward<Args>(args)...);
     auto task = std::make_shared<std::packaged_task<return_type()>>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...)
+        [f = std::forward<F>(f), args = std::move(args_tuple)]() mutable {
+            return std::apply(std::move(f), std::move(args));
+        }
     );
-    
-    std::future<return_type> res = task->get_future();
+
+    std::future<return_type> result = task->get_future();
+
     {
-        std::unique_lock<std::mutex> lock(queue_mutex);
-
-        // Prevenir inserción de datos si el pool fue destruido
-        if(stop) throw std::runtime_error("Enqueue invocado en un ThreadPool detenido.");
-
-        tasks.emplace([task]() { (*task)(); });
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        if (stop) {
+            throw std::runtime_error("enqueue on stopped ThreadPool");
+        }
+        tasks.emplace([task = std::move(task)]() { (*task)(); });
     }
-    cv.notify_one(); // Notificar a un hilo trabajador disponible
-    return res;
+    cv.notify_one();
+    return result;
 }
 
-// Destructor: Garantiza un apagado seguro y limpio (Graceful Teardown)
-inline ThreadPool::~ThreadPool() {
+inline ThreadPool::~ThreadPool() noexcept {
     {
-        std::unique_lock<std::mutex> lock(queue_mutex);
+        std::lock_guard<std::mutex> lock(queue_mutex);
         stop = true;
     }
-    cv.notify_all(); // Despertar a todos los hilos para su finalización
-    for(std::thread &worker: workers) {
-        if(worker.joinable()) worker.join();
+    cv.notify_all();
+    for (std::thread& worker : workers) {
+        if (worker.joinable())
+            worker.join();
     }
 }
 
